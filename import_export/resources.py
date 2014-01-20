@@ -324,7 +324,7 @@ class Resource(object):
                         transaction.leave_transaction_management()
                     raise
             if (row_result.import_type != RowResult.IMPORT_TYPE_SKIP or 
-                        self._meta.report_skipped): 
+                        self._meta.report_skipped):
                 result.rows.append(row_result)
 
         if use_transactions:
@@ -479,6 +479,99 @@ class ModelResource(Resource):
 
     def init_instance(self, row=None):
         return self._meta.model()
+
+
+class BetterModelResource(ModelResource):
+
+    def init_instance(self, row=None):
+        temp_dict = {}
+        for field in self._meta.fields:
+            if self._meta.import_id_fields == [field] and not bool(row[field]):
+                continue
+            temp_dict[field] = row[field]
+        return self._meta.model(**temp_dict)
+
+    def get_diff(self, row):
+        data = []
+        for k, v in row.items():
+            html = mark_safe('<span>%s</span>' % v)
+            data.append(html)
+        return data
+
+    def get_fields(self):
+        """
+        Returns fields.
+        """
+        return self._meta.fields or self.fields.keys()
+
+
+    def import_obj(self, instance, row):
+        for field in self.get_fields()
+            setattr(field, instance, row[field])
+
+    def import_data(self, dataset, dry_run=False, raise_errors=False,
+            use_transactions=None):
+        """
+        Imports data from ``dataset``.
+
+        ``use_transactions``
+            If ``True`` import process will be processed inside transaction.
+            If ``dry_run`` is set, or error occurs, transaction will be rolled
+            back.
+        """
+        result = Result()
+        if use_transactions is None:
+            use_transactions = self.get_use_transactions()
+
+        if use_transactions is True:
+            # when transactions are used we want to create/update/delete object
+            # as transaction will be rolled back if dry_run is set
+            real_dry_run = False
+            transaction.enter_transaction_management()
+            transaction.managed(True)
+        else:
+            real_dry_run = dry_run
+
+        for row in dataset.dict:
+            try:
+                row_result = RowResult()
+                instance = self.init_instance(row)
+
+                if self.for_delete(row, instance):
+                    if instance.pk:
+                        row_result.import_type = RowResult.IMPORT_TYPE_SKIP
+                    else:
+                        row_result.import_type = RowResult.IMPORT_TYPE_DELETE
+                        self.delete_instance(instance, real_dry_run)
+                else:
+                    self.import_obj(instance, row)
+                    instance.clean_fields()
+                    self.save_instance(instance, real_dry_run)
+
+                row_result.diff = self.get_diff(row=row)
+                if instance.pk:
+                    row_result.import_type = RowResult.IMPORT_TYPE_UPDATE
+                else:
+                    row_result.import_type = RowResult.IMPORT_TYPE_NEW
+
+            except Exception, e:
+                tb_info = traceback.format_exc(sys.exc_info()[2])
+                row_result.errors.append(Error(repr(e), tb_info))
+                if raise_errors:
+                    if use_transactions:
+                        transaction.rollback()
+                        transaction.leave_transaction_management()
+                    raise
+            result.rows.append(row_result)
+
+        if use_transactions:
+            if dry_run or result.has_errors():
+                transaction.rollback()
+            else:
+                transaction.commit()
+            transaction.leave_transaction_management()
+
+        return result
 
 
 def modelresource_factory(model, resource_class=ModelResource):
