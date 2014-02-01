@@ -537,9 +537,16 @@ class BetterModelResource(ModelResource):
             try:
                 row_result = BetterRowResult()
                 instance = self.init_instance(row)
-                self.import_obj(instance, row)
-                instance.clean_fields()
-                self.save_instance(instance, real_dry_run)
+                if self.for_delete(row, instance):
+                    if instance.pk:
+                        row_result.import_type = RowResult.IMPORT_TYPE_SKIP
+                    else:
+                        row_result.import_type = RowResult.IMPORT_TYPE_DELETE
+                        self.delete_instance(instance, real_dry_run)
+                else:
+                    self.import_obj(instance, row)
+                    instance.clean_fields()
+                    self.save_instance(instance, real_dry_run)
 
                 row_result.diff = self.get_diff(row=row)
                 if instance.pk:
