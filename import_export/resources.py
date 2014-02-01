@@ -1,20 +1,21 @@
-import functools
-from copy import deepcopy
 import sys
 import traceback
+import functools
+from copy import deepcopy
 
 import tablib
 from diff_match_patch import diff_match_patch
 
+from django.conf import settings
+from django.db import transaction
 from django.utils.safestring import mark_safe
 from django.utils.datastructures import SortedDict
-from django.db import transaction
 from django.db.models.related import RelatedObject
-from django.conf import settings
+from django.core.validators import ValidationError
 
-from .results import Error, Result, RowResult
 from .fields import Field
 from import_export import widgets
+from .results import Error, Result, RowResult
 from .instance_loaders import (
         ModelInstanceLoader,
         )
@@ -534,29 +535,33 @@ class BetterModelResource(ModelResource):
 
         for row in dataset.dict:
             try:
-                row_result = RowResult()
+                row_result = BetterRowResult()
                 instance = self.init_instance(row)
-
-                if self.for_delete(row, instance):
-                    if instance.pk:
-                        row_result.import_type = RowResult.IMPORT_TYPE_SKIP
-                    else:
-                        row_result.import_type = RowResult.IMPORT_TYPE_DELETE
-                        self.delete_instance(instance, real_dry_run)
-                else:
-                    self.import_obj(instance, row)
-                    instance.clean_fields()
-                    self.save_instance(instance, real_dry_run)
+                self.import_obj(instance, row)
+                instance.clean_fields()
+                self.save_instance(instance, real_dry_run)
 
                 row_result.diff = self.get_diff(row=row)
                 if instance.pk:
-                    row_result.import_type = RowResult.IMPORT_TYPE_UPDATE
+                    row_result.import_type = BetterRowResult.IMPORT_TYPE_UPDATE
                 else:
-                    row_result.import_type = RowResult.IMPORT_TYPE_NEW
+                    row_result.import_type = BetterRowResult.IMPORT_TYPE_NEW
+
+            except ValidationError as errors:
+                row_data = [row[f] for f in self.get_export_headers()]
+                row_result.row_data = row_data
+                for field, error in errors.message_dict.items():
+                    if field in self._meta.exclude:
+                        continue
+                    er = field + ': ' + error[0]
+                    tb_info = traceback.format_exc(sys.exc_info()[2])
+                    row_result.errors.append(Error(repr(er), tb_info))
 
             except Exception, e:
                 tb_info = traceback.format_exc(sys.exc_info()[2])
                 row_result.errors.append(Error(repr(e), tb_info))
+                row_data = [row[f] for f in self.get_export_headers()]
+                row_result.row_data = row_data
                 if raise_errors:
                     if use_transactions:
                         transaction.rollback()
