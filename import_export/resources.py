@@ -534,7 +534,7 @@ class BetterModelResource(ModelResource):
 
 
     def import_obj(self, instance, row):
-        for field in self.get_fields()
+        for field in self.get_fields():
             setattr(field, instance, row[field])
 
     def import_data(self, dataset, dry_run=False, raise_errors=False,
