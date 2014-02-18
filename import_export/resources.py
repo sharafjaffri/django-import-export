@@ -1,23 +1,24 @@
 from __future__ import unicode_literals
 
-import functools
-from copy import deepcopy
 import sys
 import traceback
+import functools
+from copy import deepcopy
 
 import tablib
 from diff_match_patch import diff_match_patch
 
+from django.conf import settings
 from django.utils.safestring import mark_safe
 from django.utils.datastructures import SortedDict
 from django.utils import six
 from django.db import transaction
 from django.db.models.related import RelatedObject
-from django.conf import settings
+from django.core.validators import ValidationError
 
-from .results import Error, Result, RowResult
 from .fields import Field
 from import_export import widgets
+from .results import Error, Result, RowResult, BetterRowResult
 from .instance_loaders import (
     ModelInstanceLoader,
 )
@@ -503,6 +504,99 @@ class ModelResource(six.with_metaclass(ModelDeclarativeMetaclass, Resource)):
 
     def init_instance(self, row=None):
         return self._meta.model()
+
+
+class BetterModelResource(ModelResource):
+
+    def init_instance(self, row=None):
+        temp_dict = {}
+        for field in self._meta.fields:
+            if self._meta.import_id_fields == [field] and not bool(row[field]):
+                continue
+            temp_dict[field] = row[field]
+        return self._meta.model(**temp_dict)
+
+    def get_diff(self, row):
+        data = []
+        for v in row.values():
+            html = mark_safe('<span>%s</span>' % v)
+            data.append(html)
+        return data
+
+    def import_data(self, dataset, dry_run=False, raise_errors=False,
+            use_transactions=None):
+        """
+        Imports data from ``dataset``.
+
+        ``use_transactions``
+            If ``True`` import process will be processed inside transaction.
+            If ``dry_run`` is set, or error occurs, transaction will be rolled
+            back.
+        """
+        result = Result()
+        if use_transactions is None:
+            use_transactions = self.get_use_transactions()
+
+        if use_transactions is True:
+            # when transactions are used we want to create/update/delete object
+            # as transaction will be rolled back if dry_run is set
+            real_dry_run = False
+            transaction.enter_transaction_management()
+            transaction.managed(True)
+        else:
+            real_dry_run = dry_run
+
+        for row in dataset.dict:
+            try:
+                row_result = BetterRowResult()
+                instance = self.init_instance(row)
+                self.import_obj(instance, row, real_dry_run)
+                instance.clean_fields()
+                self.save_instance(instance, real_dry_run)
+
+                row_result.diff = self.get_diff(row=row)
+                if instance.pk:
+                    row_result.import_type = BetterRowResult.IMPORT_TYPE_UPDATE
+                else:
+                    row_result.import_type = BetterRowResult.IMPORT_TYPE_NEW
+
+            except ValidationError as errors:
+                row_data = [row[f] for f in self.get_export_headers()]
+                row_result.row_data = row_data
+                for field, error in errors.message_dict.items():
+                    if field in self._meta.exclude:
+                        continue
+                    er = field + ': ' + error[0]
+                    tb_info = traceback.format_exc(sys.exc_info()[2])
+                    row_result.errors.append(Error(repr(er), tb_info))
+            except IntegrityError as ex:
+                row_data = [row[f] for f in self.get_export_headers()]
+                row_result.row_data = row_data
+                tb_info = traceback.format_exc(sys.exc_info()[2])
+                row_result.errors.append(Error(repr('Duplicate row'), tb_info))
+                result.rows.append(row_result)
+                break
+
+            except Exception, e:
+                tb_info = traceback.format_exc(sys.exc_info()[2])
+                row_result.errors.append(Error(repr(e), tb_info))
+                row_data = [row[f] for f in self.get_export_headers()]
+                row_result.row_data = row_data
+                if raise_errors:
+                    if use_transactions:
+                        transaction.rollback()
+                        transaction.leave_transaction_management()
+                    raise
+            result.rows.append(row_result)
+
+        if use_transactions:
+            if dry_run or result.has_errors():
+                transaction.rollback()
+            else:
+                transaction.commit()
+            transaction.leave_transaction_management()
+
+        return result
 
 
 def modelresource_factory(model, resource_class=ModelResource):

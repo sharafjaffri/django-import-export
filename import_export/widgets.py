@@ -1,6 +1,7 @@
 from __future__ import unicode_literals
 
 from decimal import Decimal
+from decimal import ROUND_UP
 from datetime import datetime
 
 try:
@@ -52,7 +53,7 @@ class DecimalWidget(Widget):
     def clean(self, value):
         if not value:
             return None
-        return Decimal(value)
+        return Decimal(value).quantize(Decimal('.00001'), ROUND_UP)
 
 
 class CharWidget(Widget):

@@ -149,17 +149,38 @@ class XLS(TablibFormat):
     def can_import(self):
         return XLS_IMPORT
 
+    def formatcell(book, celltype, cellvalue):
+        '''
+        Properly formats the various cell types in an excel sheet.
+        Deals with floats, dates and errors currently.
+        '''
+        # deal with floats
+        if celltype == 2:
+            if cellvalue == int(cellvalue):
+                cellvalue = int(cellvalue)
+        # deal with dates
+        elif celltype == 3:
+            datetuple = xlrd.xldate_as_tuple(cellvalue, book.datemode)
+            cellvalue = "%04d-%02d-%02d %02d:%02d:%02d" % datetuple
+        # deal with errors
+        elif celltype == 5:
+            cellvalue = xlrd.error_text_from_code[cellvalue]
+        return cellvalue
+
     def create_dataset(self, in_stream):
         """
         Create dataset from first sheet.
         """
         assert XLS_IMPORT
         xls_book = xlrd.open_workbook(file_contents=in_stream)
+        formatter = lambda(t, v): self.formatcell(xls_book, t, v, False)
         dataset = tablib.Dataset()
         sheet = xls_book.sheets()[0]
         for i in xrange(sheet.nrows):
             if i == 0:
                 dataset.headers = sheet.row_values(0)
             else:
-                dataset.append(sheet.row_values(i))
+                (types, values) = (sheet.row_types(i), sheet.row_values(i))
+                line = map(formatter, zip(types, values))
+                dataset.append(line)
         return dataset

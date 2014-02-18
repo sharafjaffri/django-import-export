@@ -20,6 +20,12 @@ class RowResult(object):
         self.import_type = None
 
 
+class BetterRowResult(RowResult):
+    def __init__(self):
+        super(BetterRowResult, self).__init__()
+        self.row_data = []
+
+
 class Result(object):
 
     def __init__(self, *args, **kwargs):
