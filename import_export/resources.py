@@ -21,7 +21,7 @@ from django.core.validators import ValidationError
 
 from .fields import Field
 from import_export import widgets
-from .results import Error, Result, RowResult
+from .results import Error, Result, RowResult, BetterRowResult
 from .instance_loaders import (
     ModelInstanceLoader,
 )
@@ -521,21 +521,10 @@ class BetterModelResource(ModelResource):
 
     def get_diff(self, row):
         data = []
-        for k, v in row.items():
+        for v in row.values():
             html = mark_safe('<span>%s</span>' % v)
             data.append(html)
         return data
-
-    def get_fields(self):
-        """
-        Returns fields.
-        """
-        return self._meta.fields or self.fields.keys()
-
-
-    def import_obj(self, instance, row):
-        for field in self.get_fields():
-            setattr(field, instance, row[field])
 
     def import_data(self, dataset, dry_run=False, raise_errors=False,
             use_transactions=None):
@@ -564,16 +553,9 @@ class BetterModelResource(ModelResource):
             try:
                 row_result = BetterRowResult()
                 instance = self.init_instance(row)
-                if self.for_delete(row, instance):
-                    if instance.pk:
-                        row_result.import_type = RowResult.IMPORT_TYPE_SKIP
-                    else:
-                        row_result.import_type = RowResult.IMPORT_TYPE_DELETE
-                        self.delete_instance(instance, real_dry_run)
-                else:
-                    self.import_obj(instance, row)
-                    instance.clean_fields()
-                    self.save_instance(instance, real_dry_run)
+                self.import_obj(instance, row, real_dry_run)
+                instance.clean_fields()
+                self.save_instance(instance, real_dry_run)
 
                 row_result.diff = self.get_diff(row=row)
                 if instance.pk:
@@ -590,6 +572,13 @@ class BetterModelResource(ModelResource):
                     er = field + ': ' + error[0]
                     tb_info = traceback.format_exc(sys.exc_info()[2])
                     row_result.errors.append(Error(repr(er), tb_info))
+            except IntegrityError as ex:
+                row_data = [row[f] for f in self.get_export_headers()]
+                row_result.row_data = row_data
+                tb_info = traceback.format_exc(sys.exc_info()[2])
+                row_result.errors.append(Error(repr('Duplicate row'), tb_info))
+                result.rows.append(row_result)
+                break
 
             except Exception, e:
                 tb_info = traceback.format_exc(sys.exc_info()[2])
