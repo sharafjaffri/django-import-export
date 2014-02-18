@@ -1,7 +1,5 @@
 from __future__ import unicode_literals
 
-import functools
-from copy import deepcopy
 import sys
 import traceback
 import functools
@@ -11,7 +9,6 @@ import tablib
 from diff_match_patch import diff_match_patch
 
 from django.conf import settings
-from django.db import transaction
 from django.utils.safestring import mark_safe
 from django.utils.datastructures import SortedDict
 from django.utils import six
