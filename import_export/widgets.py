@@ -1,6 +1,13 @@
+from __future__ import unicode_literals
+
 from decimal import Decimal
 from decimal import ROUND_UP
 from datetime import datetime
+
+try:
+    from django.utils.encoding import force_text
+except ImportError:
+    from django.utils.encoding import force_unicode as force_text
 
 
 class Widget(object):
@@ -24,7 +31,7 @@ class Widget(object):
         """
         Returns export representation of python value.
         """
-        return unicode(value)
+        return force_text(value)
 
 
 class IntegerWidget(Widget):
@@ -55,7 +62,7 @@ class CharWidget(Widget):
     """
 
     def render(self, value):
-        return unicode(value)
+        return force_text(value)
 
 
 class BooleanWidget(Widget):

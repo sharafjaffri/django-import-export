@@ -10,6 +10,9 @@ CLASSIFIERS = [
     'License :: OSI Approved :: BSD License',
     'Operating System :: OS Independent',
     'Topic :: Software Development',
+    'Programming Language :: Python',
+    'Programming Language :: Python :: 2',
+    'Programming Language :: Python :: 3',
 ]
 
 install_requires = [
@@ -24,6 +27,8 @@ setup(
     version=VERSION,
     author="Informatika Mihelac",
     author_email="bmihelac@mihelac.org",
+    license='BSD License',
+    platforms=['OS Independent'],
     url="https://github.com/bmihelac/django-import-export",
     packages=find_packages(exclude=["tests"]),
     include_package_data=True,
