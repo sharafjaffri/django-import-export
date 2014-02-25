@@ -1,5 +1,7 @@
 from __future__ import unicode_literals
 
+import functools
+from copy import deepcopy
 import sys
 import traceback
 import functools
@@ -9,6 +11,7 @@ import tablib
 from diff_match_patch import diff_match_patch
 
 from django.conf import settings
+from django.db import transaction, IntegrityError
 from django.utils.safestring import mark_safe
 from django.utils.datastructures import SortedDict
 from django.utils import six
@@ -552,13 +555,21 @@ class BetterModelResource(ModelResource):
                 instance = self.init_instance(row)
                 self.import_obj(instance, row, real_dry_run)
                 instance.clean_fields()
-                self.save_instance(instance, real_dry_run)
-
-                row_result.diff = self.get_diff(row=row)
-                if instance.pk:
-                    row_result.import_type = BetterRowResult.IMPORT_TYPE_UPDATE
+                if self.for_delete(row, instance):
+                    if instance.pk:
+                        row_result.import_type = RowResult.IMPORT_TYPE_DELETE
+                        self.delete_instance(instance, real_dry_run)
+                        row_result.diff = self.get_diff(row=row)
+                    else:
+                        row_result.import_type = RowResult.IMPORT_TYPE_SKIP
+                        row_result.diff = self.get_diff(row=row)
                 else:
-                    row_result.import_type = BetterRowResult.IMPORT_TYPE_NEW
+                    self.save_instance(instance, real_dry_run)
+                    row_result.diff = self.get_diff(row=row)
+                    if instance.pk:
+                        row_result.import_type = BetterRowResult.IMPORT_TYPE_UPDATE
+                    else:
+                        row_result.import_type = BetterRowResult.IMPORT_TYPE_NEW
 
             except ValidationError as errors:
                 row_data = [row[f] for f in self.get_export_headers()]

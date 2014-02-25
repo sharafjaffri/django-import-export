@@ -107,19 +107,22 @@ class DateTimeWidget(Widget):
     Takes optional ``format`` parameter.
     """
 
-    def __init__(self, format=None):
+    def __init__(self, format=None, is_formated=False):
         if format is None:
             format = "%Y-%m-%d %H:%M:%S"
         self.format = format
-
+        self.is_formated = is_formated
     def clean(self, value):
         if not value:
             return None
         return datetime.strptime(value, self.format)
 
     def render(self, value):
-        return value.strftime(self.format)
-
+        if self.is_formated:
+            return value.strftime(self.format)
+        else:
+            strftime = value.strftime(self.format)
+            return value.strptime(strftime, self.format)
 
 class ForeignKeyWidget(Widget):
     """
