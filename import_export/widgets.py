@@ -1,7 +1,7 @@
 from __future__ import unicode_literals
 
 from decimal import Decimal
-from decimal import ROUND_UP
+from decimal import ROUND_FLOOR
 from datetime import datetime
 
 try:
@@ -53,7 +53,7 @@ class DecimalWidget(Widget):
     def clean(self, value):
         if not value:
             return None
-        return Decimal(value).quantize(Decimal('.00001'), ROUND_UP)
+        return Decimal(value).quantize(Decimal('.00001'), ROUND_FLOOR)
 
 
 class CharWidget(Widget):
@@ -86,18 +86,53 @@ class DateWidget(Widget):
     Takes optional ``format`` parameter.
     """
 
-    def __init__(self, format=None):
+    def __init__(self, format=None, is_formated=False):
         if format is None:
             format = "%Y-%m-%d"
         self.format = format
+        self.is_formated = is_formated
 
     def clean(self, value):
         if not value:
             return None
-        return datetime.strptime(value, self.format).date()
+        try:
+            result = datetime.strptime(value, self.format).date()
+        except ValueError:
+            result = datetime.strptime(value, self.format + " %H:%M:%S").date()
+        return result
 
     def render(self, value):
-        return value.strftime(self.format)
+        if self.is_formated:
+            return value.strftime(self.format)
+        else:
+            strftime = value.strftime(self.format)
+            return datetime.strptime(strftime, self.format).date()
+
+
+class TimeWidget(Widget):
+    """
+    Widget for converting time fields.
+
+    Takes optional ``format`` parameter.
+    """
+
+    def __init__(self, format=None, is_formated=False):
+        if format is None:
+            format = "%H:%M:%S"
+        self.format = format
+        self.is_formated = is_formated
+
+    def clean(self, value):
+        if not value:
+            return None
+        return datetime.strptime(value, self.format).time()
+
+    def render(self, value):
+        if self.is_formated:
+            return value.strftime(self.format)
+        else:
+            strftime = value.strftime(self.format)
+            return datetime.strptime(strftime, self.format).time()
 
 
 class DateTimeWidget(Widget):
@@ -112,6 +147,7 @@ class DateTimeWidget(Widget):
             format = "%Y-%m-%d %H:%M:%S"
         self.format = format
         self.is_formated = is_formated
+
     def clean(self, value):
         if not value:
             return None
@@ -122,7 +158,7 @@ class DateTimeWidget(Widget):
             return value.strftime(self.format)
         else:
             strftime = value.strftime(self.format)
-            return value.strptime(strftime, self.format)
+            return datetime.strptime(strftime, self.format)
 
 class ForeignKeyWidget(Widget):
     """
