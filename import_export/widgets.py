@@ -52,7 +52,7 @@ class DecimalWidget(Widget):
     def clean(self, value):
         if not value:
             return None
-        return Decimal(value).quantize(Decimal('.00000'), None)
+        return Decimal(value).quantize(Decimal('.00000'))
 
 
 class CharWidget(Widget):
